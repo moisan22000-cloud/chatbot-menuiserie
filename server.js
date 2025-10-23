@@ -1,11 +1,9 @@
-// server.js — backend sécurisé + CORS + confirmation utilisateur
-
-import express from "express";
-import bodyParser from "body-parser";
-import nodemailer from "nodemailer";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
-import cors from "cors"; // ✅ Import CORS
+import express from 'express';
+import bodyParser from 'body-parser';
+import cors from 'cors';
+import nodemailer from 'nodemailer';
+import fetch from 'node-fetch';
+import dotenv from 'dotenv';
 
 dotenv.config();
 
@@ -17,83 +15,69 @@ const EMAIL_FROM = process.env.EMAIL_FROM;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 
-// ✅ Autoriser ton site à appeler le backend
-app.use(
-  cors({
-    origin: [
-      "https://menuiserie-lichen.fr", // ton site en production
-      "https://chatbot-menuiserie-1.onrender.com", // ton Render
-      "http://localhost:3000", // utile pour tester localement
-    ],
-  })
-);
-
+app.use(cors()); // Autorise toutes les origines
 app.use(bodyParser.json());
 
-// ✅ Configuration e-mail
+// Transport d’e‑mail
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  service: 'gmail',
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
   },
 });
 
-// ✅ Route principale : chatbot + mail
-app.post("/api/chat", async (req, res) => {
+// Chatbot route
+app.post('/api/chat', async (req, res) => {
   const messages = req.body.messages || [];
 
+  const fullMessages = [
+    { role: 'system', content: "Tu es un assistant spécialisé en menuiserie, à l'écoute du client pour comprendre son projet." },
+    ...messages
+  ];
+
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini", // modèle rapide et efficace
-        messages,
+        model: 'gpt-4o',
+        messages: fullMessages,
       }),
     });
 
     const data = await response.json();
+    console.log('Réponse OpenAI brute :', JSON.stringify(data));
 
-    if (!data.choices || !data.choices.length) {
+    const reply = data.choices?.[0]?.message?.content;
+
+    if (!reply) {
       throw new Error("Aucune réponse du modèle OpenAI");
     }
 
-    let reply = data.choices[0].message.content || "Une erreur est survenue.";
-
-    // ✅ Ajout d’une phrase de remerciement personnalisée
-    reply +=
-      "\n\n🪵 Merci pour ces précisions, je vous recontacte rapidement pour échanger sur votre projet.";
-
-    // ✅ Envoi du résumé par mail
+    // Envoi de mail au menuisier
     await transporter.sendMail({
       from: EMAIL_FROM,
       to: EMAIL_TO,
-      subject: "🪵 Nouveau brief client via le chatbot",
-      text: `Résumé de la conversation :\n\n${messages
-        .map((m) => `${m.role}: ${m.content}`)
-        .join("\n")}\n\nRéponse du chatbot :\n${reply}`,
+      subject: '🪵 Nouveau message via le chatbot',
+      text: `Résumé de la conversation :\n\n${messages.map(m => `${m.role}: ${m.content}`).join('\n')}`,
     });
 
-    // ✅ Envoi de la réponse à l’utilisateur
     res.json({ reply });
   } catch (err) {
-    console.error("Erreur serveur GPT/chatbot :", err);
-    res
-      .status(500)
-      .json({ error: "Erreur serveur — impossible de contacter le chatbot." });
+    console.error('Erreur serveur GPT/chatbot :', err.message);
+    res.status(500).json({ error: 'Erreur serveur' });
   }
 });
 
-// ✅ Route test Render
-app.get("/", (req, res) => {
-  res.send("🚀 Le chatbot Menuiserie Lichen est en ligne et prêt à répondre !");
+// Route de test pour Render
+app.get('/', (req, res) => {
+  res.send('🚀 Le chatbot Menuiserie Lichen est en ligne et prêt à répondre !');
 });
 
-// ✅ Serveur en écoute
-app.listen(port, "0.0.0.0", () => {
-  console.log(`✅ Chatbot server running on port ${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`✅ Serveur chatbot lancé sur le port ${port}`);
 });
