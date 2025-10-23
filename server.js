@@ -1,4 +1,4 @@
-// server.js — backend sécurisé + CORS activé
+// server.js — backend sécurisé + CORS + confirmation utilisateur
 
 import express from "express";
 import bodyParser from "body-parser";
@@ -17,20 +17,20 @@ const EMAIL_FROM = process.env.EMAIL_FROM;
 const SMTP_USER = process.env.SMTP_USER;
 const SMTP_PASS = process.env.SMTP_PASS;
 
-// ✅ Autoriser ton site à appeler l'API
+// ✅ Autoriser ton site à appeler le backend
 app.use(
   cors({
     origin: [
-      "https://atelier-lichen.fr", // ton site en prod
-      "https://chatbot-menuiserie-1.onrender.com", // ton backend Render
-      "http://localhost:3000", // utile pour tests en local
+      "https://atelier-lichen.fr", // ton site en production
+      "https://chatbot-menuiserie-1.onrender.com", // ton Render
+      "http://localhost:3000", // utile pour tester localement
     ],
   })
 );
 
 app.use(bodyParser.json());
 
-// ✅ Configure l’envoi d’email
+// ✅ Configuration e-mail
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -39,7 +39,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ✅ Route principale pour ton chatbot
+// ✅ Route principale : chatbot + mail
 app.post("/api/chat", async (req, res) => {
   const messages = req.body.messages || [];
 
@@ -51,19 +51,22 @@ app.post("/api/chat", async (req, res) => {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini", // modèle plus rapide et stable
+        model: "gpt-4o-mini", // modèle rapide et efficace
         messages,
       }),
     });
 
     const data = await response.json();
 
-    // ✅ Vérifie la réponse OpenAI
     if (!data.choices || !data.choices.length) {
       throw new Error("Aucune réponse du modèle OpenAI");
     }
 
-    const reply = data.choices[0].message.content || "Une erreur est survenue.";
+    let reply = data.choices[0].message.content || "Une erreur est survenue.";
+
+    // ✅ Ajout d’une phrase de remerciement personnalisée
+    reply +=
+      "\n\n🪵 Merci pour ces précisions, je vous recontacte rapidement pour échanger sur votre projet.";
 
     // ✅ Envoi du résumé par mail
     await transporter.sendMail({
@@ -72,25 +75,25 @@ app.post("/api/chat", async (req, res) => {
       subject: "🪵 Nouveau brief client via le chatbot",
       text: `Résumé de la conversation :\n\n${messages
         .map((m) => `${m.role}: ${m.content}`)
-        .join("\n")}\n\nRéponse générée :\n${reply}`,
+        .join("\n")}\n\nRéponse du chatbot :\n${reply}`,
     });
 
-    // ✅ Envoi au frontend
+    // ✅ Envoi de la réponse à l’utilisateur
     res.json({ reply });
   } catch (err) {
     console.error("Erreur serveur GPT/chatbot :", err);
     res
       .status(500)
-      .json({ error: "Erreur serveur. Impossible de contacter le chatbot." });
+      .json({ error: "Erreur serveur — impossible de contacter le chatbot." });
   }
 });
 
-// ✅ Route de test pour Render
+// ✅ Route test Render
 app.get("/", (req, res) => {
-  res.send("🚀 Le chatbot Menuiserie Lichen est en ligne et prêt !");
+  res.send("🚀 Le chatbot Menuiserie Lichen est en ligne et prêt à répondre !");
 });
 
-// ✅ Lancement du serveur (toutes interfaces)
+// ✅ Serveur en écoute
 app.listen(port, "0.0.0.0", () => {
   console.log(`✅ Chatbot server running on port ${port}`);
 });
