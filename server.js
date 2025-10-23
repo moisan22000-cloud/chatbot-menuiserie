@@ -62,6 +62,11 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// Route de test pour Render
+app.get('/', (req, res) => {
+  res.send('Le chatbot est en ligne 🚀');
+});
+
 app.listen(port, () => {
   console.log(`Chatbot server running on port ${port}`);
 });
