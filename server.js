@@ -67,6 +67,7 @@ app.get('/', (req, res) => {
   res.send('Le chatbot est en ligne 🚀');
 });
 
-app.listen(port, () => {
+app.listen(port, '0.0.0.0', () => {
   console.log(`Chatbot server running on port ${port}`);
 });
+
