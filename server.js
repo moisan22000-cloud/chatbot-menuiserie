@@ -21,7 +21,7 @@ const SMTP_PASS = process.env.SMTP_PASS;
 app.use(
   cors({
     origin: [
-      "https://atelier-lichen.fr", // ton site en production
+      "https://menuiserie-lichen.fr", // ton site en production
       "https://chatbot-menuiserie-1.onrender.com", // ton Render
       "http://localhost:3000", // utile pour tester localement
     ],
