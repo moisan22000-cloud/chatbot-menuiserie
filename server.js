@@ -4,7 +4,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import fetch from "node-fetch";
-import pdfParse from "pdf-parse";
+import * as pdfParse from "pdf-parse"; // ✅ Import compatible ESM
 
 const app = express();
 app.use(cors());
@@ -32,7 +32,7 @@ async function analyzeFile(filePath, mimetype, originalname) {
 
     if (mimetype === "application/pdf") {
       const dataBuffer = fs.readFileSync(filePath);
-      const data = await pdfParse(dataBuffer);
+      const data = await pdfParse.default(dataBuffer); // ✅ Appel correct
       const extract = data.text.slice(0, 300).replace(/\s+/g, " ");
       return `📘 PDF "${originalname}" — extrait: ${extract}...`;
     }
