@@ -124,7 +124,50 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
       });
     }
 
-    // ======== 🎨 Génération d'image ========
+    // ======== 🔍 Analyse d’image jointe ========
+    const hasImage = (req.files || []).some(f => f.mimetype.startsWith("image/"));
+    if (hasImage && /agencement|rendu|meuble|aménagement|décor/i.test(userMessage)) {
+      try {
+        const file = req.files[0];
+        const imageBuffer = fs.readFileSync(file.path);
+        const imageBase64 = imageBuffer.toString("base64");
+
+        const completion = await client.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "system",
+              content:
+                "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
+                "Tu conseilles avec réalisme sur les matériaux, la disposition, les teintes et le style. " +
+                "Quand on t’envoie une photo, décris la pièce et propose un agencement réaliste."
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: userMessage },
+                { type: "image_url", image_url: `data:image/jpeg;base64,${imageBase64}` }
+              ]
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 700
+        });
+
+        const reply = completion.choices?.[0]?.message?.content || "Aucune idée d’agencement trouvée.";
+        cleanup();
+        return res.json({ reply });
+      } catch (err) {
+        console.error("⚠️ Erreur analyse image :", err.message);
+        cleanup();
+        return res.json({
+          reply: "⚠️ Impossible d’analyser l’image pour le moment.",
+          error: err.message
+        });
+      }
+    }
+
+    // ======== 🎨 Génération d’image (rendu) ========
     if (isImageRequest(userMessage)) {
       try {
         const image = await client.images.generate({
@@ -162,7 +205,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
       }
     }
 
-    // ======== 💬 Réponse textuelle GPT ========
+    // ======== 💬 Réponse textuelle classique ========
     const completion = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
