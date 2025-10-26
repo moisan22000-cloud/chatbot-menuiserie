@@ -8,6 +8,7 @@ import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import OpenAI from "openai";
+import cors from "cors";
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -23,6 +24,17 @@ if (!process.env.OPENAI_API_KEY) {
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const app = express();
+app.use(
+  cors({
+    origin: [
+      "https://menuiserie-lichen.fr",
+      "https://www.menuiserie-lichen.fr",
+      "http://localhost:3000"
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type"],
+  })
+);
 
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
