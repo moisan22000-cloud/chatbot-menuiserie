@@ -126,21 +126,22 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
 
     // ======== 🔍 Analyse d’image jointe ========
     const hasImage = (req.files || []).some(f => f.mimetype.startsWith("image/"));
-    if (hasImage && /agencement|rendu|meuble|aménagement|décor/i.test(userMessage)) {
+    if (hasImage) {
       try {
+        // 🔸 Étape 1 : lire et comprendre la photo
         const file = req.files[0];
         const imageBuffer = fs.readFileSync(file.path);
         const imageBase64 = imageBuffer.toString("base64");
 
-        const completion = await client.chat.completions.create({
+        const visionResponse = await client.chat.completions.create({
           model: "gpt-4o",
           messages: [
             {
               role: "system",
               content:
                 "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
-                "Tu conseilles avec réalisme sur les matériaux, la disposition, les teintes et le style. " +
-                "Quand on t’envoie une photo, décris la pièce et propose un agencement réaliste."
+                "Quand on t’envoie une photo, analyse la pièce (style, matériaux, lumière, teintes) " +
+                "et propose un agencement de mobilier réaliste et esthétique qui s’intègre à la photo."
             },
             {
               role: "user",
@@ -151,84 +152,36 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
             }
           ],
           temperature: 0.7,
-          max_tokens: 700
+          max_tokens: 800
         });
 
-        const reply = completion.choices?.[0]?.message?.content || "Aucune idée d’agencement trouvée.";
+        const visionReply =
+          visionResponse.choices?.[0]?.message?.content ||
+          "Aucune suggestion trouvée.";
+
+        // 🔸 Étape 2 : générer un rendu visuel intégré
+        const renderPrompt = `Intègre à cette photo un agencement réaliste selon la description suivante : ${visionReply}`;
+        const renderImage = await client.images.generate({
+          model: "gpt-image-1",
+          prompt: renderPrompt,
+          size: "1024x1024"
+        });
+
+        const imageUrl = renderImage.data?.[0]?.url || null;
         cleanup();
-        return res.json({ reply });
+
+        return res.json({ reply: visionReply, imageUrl });
       } catch (err) {
-        console.error("⚠️ Erreur analyse image :", err.message);
+        console.error("⚠️ Erreur lecture ou génération image :", err.message);
         cleanup();
         return res.json({
-          reply: "⚠️ Impossible d’analyser l’image pour le moment.",
+          reply: "⚠️ Impossible d’analyser ou de générer l’image.",
           error: err.message
         });
       }
     }
 
-// ======== 🧠 Lecture et analyse d’image utilisateur ========
-const hasImage = (req.files || []).some(f => f.mimetype.startsWith("image/"));
-
-if (hasImage) {
-  try {
-    // On récupère la première image (tu peux itérer sur plusieurs)
-    const file = req.files[0];
-    const imageBuffer = fs.readFileSync(file.path);
-    const imageBase64 = imageBuffer.toString("base64");
-
-    // 🔸 Étape 1 : comprendre la photo et proposer un agencement
-    const visionResponse = await client.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content:
-            "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
-            "Quand on t’envoie une photo, analyse la pièce (style, matériaux, lumière, teintes) " +
-            "et propose un agencement de mobilier réaliste et esthétique qui s’intègre à la photo."
-        },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: userMessage },
-            { type: "image_url", image_url: `data:image/jpeg;base64,${imageBase64}` }
-          ]
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 800
-    });
-
-    const visionReply = visionResponse.choices?.[0]?.message?.content || "Aucune suggestion trouvée.";
-
-    // 🔸 Étape 2 : générer un rendu visuel intégré (facultatif)
-    const renderPrompt = `Intègre à cette photo un agencement réaliste selon la description suivante : ${visionReply}`;
-    const renderImage = await client.images.generate({
-      model: "gpt-image-1",
-      prompt: renderPrompt,
-      size: "1024x1024"
-    });
-
-    const imageUrl = renderImage.data?.[0]?.url || null;
-
-    cleanup();
-    return res.json({
-      reply: visionReply,
-      imageUrl
-    });
-  } catch (err) {
-    console.error("⚠️ Erreur lecture ou génération image :", err.message);
-    cleanup();
-    return res.json({
-      reply: "⚠️ Impossible d’analyser ou de générer l’image.",
-      error: err.message
-    });
-  }
-}
-
-
-    // ======== 🎨 Génération d’image (rendu) ========
+    // ======== 🎨 Génération d’image (rendu texte) ========
     if (isImageRequest(userMessage)) {
       try {
         const image = await client.images.generate({
