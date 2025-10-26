@@ -16,6 +16,7 @@ const pdfParse = require("pdf-parse"); // ✅ compatible ESM + CommonJS
 
 dotenv.config();
 
+// ===== Vérification de la clé API =====
 if (!process.env.OPENAI_API_KEY) {
   console.error("❌ ERREUR : clé OpenAI manquante. Ajoute-la dans ton .env");
   process.exit(1);
@@ -24,15 +25,16 @@ if (!process.env.OPENAI_API_KEY) {
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const app = express();
 
+// ===== CORS autorisé =====
 app.use(
   cors({
     origin: [
       "https://menuiserie-lichen.fr",
       "https://www.menuiserie-lichen.fr",
-      "http://localhost:3000",
+      "http://localhost:3000"
     ],
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
+    allowedHeaders: ["Content-Type"]
   })
 );
 
@@ -41,7 +43,7 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 const upload = multer({
   dest: path.join(process.cwd(), "tmp"),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 }
 });
 
 app.get("/", (_req, res) => {
@@ -78,14 +80,23 @@ async function summarizeFile(file) {
 }
 
 function isImageRequest(text = "") {
-  const patterns = ["image", "rendu", "visualise", "illustration", "photo", "dessin", "aperçu"];
+  const patterns = [
+    "image",
+    "rendu",
+    "visualise",
+    "illustration",
+    "photo",
+    "dessin",
+    "aperçu"
+  ];
   return patterns.some((k) => text.toLowerCase().includes(k));
 }
 
 // ======== 🤖 Route principale du chatbot ========
 
 app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
-  const cleanup = () => req.files?.forEach((file) => fs.unlink(file.path, () => {}));
+  const cleanup = () =>
+    req.files?.forEach((file) => fs.unlink(file.path, () => {}));
 
   try {
     let messages = req.body.messages;
@@ -109,32 +120,36 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
     if (fileSummaries.length) {
       context.push({
         role: "user",
-        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
+        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n")
       });
     }
 
-    // ======== 🎨 Cas de génération d'image ========
+    // ======== 🎨 Génération d'image ========
     if (isImageRequest(userMessage)) {
       try {
         const image = await client.images.generate({
           model: "gpt-image-1",
           prompt: userMessage,
-          size: "1024x1024",
-          response_format: "b64_json", // ✅ compatible avec les clés projet
+          size: "1024x1024"
         });
 
-        const base64 = image.data?.[0]?.b64_json || null;
+        const data = image.data?.[0] || {};
+        const imageUrl =
+          data.url ||
+          (data.b64_json ? `data:image/png;base64,${data.b64_json}` : null);
+
         cleanup();
 
-        if (base64) {
-          const imageUrl = `data:image/png;base64,${base64}`;
+        if (imageUrl) {
           return res.json({
             reply: "🖼️ Voici une image générée selon ta demande :",
-            imageUrl,
+            imageUrl
           });
         } else {
+          console.error("⚠️ OpenAI n'a renvoyé ni URL ni base64 :", image);
           return res.json({
-            reply: "⚠️ L'image a été générée mais aucun contenu n'a été renvoyé.",
+            reply:
+              "⚠️ L'image a été générée mais aucun lien n'a été renvoyé par OpenAI."
           });
         }
       } catch (err) {
@@ -142,7 +157,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         cleanup();
         return res.json({
           reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
-          error: err.message,
+          error: err.message
         });
       }
     }
@@ -156,16 +171,17 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
           content:
             "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
             "Conseille avec précision, bienveillance et pragmatisme. " +
-            "Pose des questions utiles et propose des pistes concrètes sur matériaux, budget et délais.",
+            "Pose des questions utiles et propose des pistes concrètes sur matériaux, budget et délais."
         },
         ...messages,
-        ...context,
+        ...context
       ],
       temperature: 0.7,
-      max_tokens: 700,
+      max_tokens: 700
     });
 
-    const reply = completion.choices?.[0]?.message?.content || "(Pas de réponse)";
+    const reply =
+      completion.choices?.[0]?.message?.content || "(Pas de réponse)";
     res.json({ reply });
     cleanup();
   } catch (err) {
