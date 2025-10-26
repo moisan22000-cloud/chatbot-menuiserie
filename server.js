@@ -9,6 +9,7 @@ import path from "path";
 import dotenv from "dotenv";
 import OpenAI from "openai";
 import cors from "cors";
+import sharp from "sharp"; // ✅ conversion universelle d’images
 import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
@@ -31,10 +32,10 @@ app.use(
     origin: [
       "https://menuiserie-lichen.fr",
       "https://www.menuiserie-lichen.fr",
-      "http://localhost:3000"
+      "http://localhost:3000",
     ],
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"]
+    allowedHeaders: ["Content-Type"],
   })
 );
 
@@ -43,7 +44,7 @@ app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
 const upload = multer({
   dest: path.join(process.cwd(), "tmp"),
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: { fileSize: 25 * 1024 * 1024 },
 });
 
 app.get("/", (_req, res) => {
@@ -87,7 +88,7 @@ function isImageRequest(text = "") {
     "illustration",
     "photo",
     "dessin",
-    "aperçu"
+    "aperçu",
   ];
   return patterns.some((k) => text.toLowerCase().includes(k));
 }
@@ -120,19 +121,24 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
     if (fileSummaries.length) {
       context.push({
         role: "user",
-        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n")
+        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
       });
     }
 
-    // ======== 🔍 Analyse d’image jointe ========
-    const hasImage = (req.files || []).some(f => f.mimetype.startsWith("image/"));
+    // ======== 🖼️ Analyse d’image universelle ========
+    const hasImage = (req.files || []).some((f) =>
+      f.mimetype.startsWith("image/")
+    );
     if (hasImage) {
       try {
-        // 🔸 Étape 1 : lire et comprendre la photo
         const file = req.files[0];
-        const imageBuffer = fs.readFileSync(file.path);
-        const imageBase64 = imageBuffer.toString("base64");
 
+        // 🔸 Conversion automatique en PNG (compatible OpenAI)
+        const buffer = fs.readFileSync(file.path);
+        const converted = await sharp(buffer).png().toBuffer();
+        const imageBase64 = converted.toString("base64");
+
+        // 🔹 Étape 1 : Analyse visuelle de la pièce
         const visionResponse = await client.chat.completions.create({
           model: "gpt-4o",
           messages: [
@@ -141,30 +147,33 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
               content:
                 "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
                 "Quand on t’envoie une photo, analyse la pièce (style, matériaux, lumière, teintes) " +
-                "et propose un agencement de mobilier réaliste et esthétique qui s’intègre à la photo."
+                "et propose un agencement de mobilier réaliste et esthétique qui s’intègre à la photo.",
             },
             {
               role: "user",
               content: [
                 { type: "text", text: userMessage },
-                { type: "image_url", image_url: `data:image/jpeg;base64,${imageBase64}` }
-              ]
-            }
+                {
+                  type: "image_url",
+                  image_url: { url: `data:image/png;base64,${imageBase64}` }, // ✅ format correct
+                },
+              ],
+            },
           ],
           temperature: 0.7,
-          max_tokens: 800
+          max_tokens: 800,
         });
 
         const visionReply =
           visionResponse.choices?.[0]?.message?.content ||
           "Aucune suggestion trouvée.";
 
-        // 🔸 Étape 2 : générer un rendu visuel intégré
+        // 🔹 Étape 2 : génération d’un rendu visuel
         const renderPrompt = `Intègre à cette photo un agencement réaliste selon la description suivante : ${visionReply}`;
         const renderImage = await client.images.generate({
           model: "gpt-image-1",
           prompt: renderPrompt,
-          size: "1024x1024"
+          size: "1024x1024",
         });
 
         const imageUrl = renderImage.data?.[0]?.url || null;
@@ -176,7 +185,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         cleanup();
         return res.json({
           reply: "⚠️ Impossible d’analyser ou de générer l’image.",
-          error: err.message
+          error: err.message,
         });
       }
     }
@@ -187,7 +196,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         const image = await client.images.generate({
           model: "gpt-image-1",
           prompt: userMessage,
-          size: "1024x1024"
+          size: "1024x1024",
         });
 
         const data = image.data?.[0] || {};
@@ -200,13 +209,13 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         if (imageUrl) {
           return res.json({
             reply: "🖼️ Voici une image générée selon ta demande :",
-            imageUrl
+            imageUrl,
           });
         } else {
           console.error("⚠️ OpenAI n'a renvoyé ni URL ni base64 :", image);
           return res.json({
             reply:
-              "⚠️ L'image a été générée mais aucun lien n'a été renvoyé par OpenAI."
+              "⚠️ L'image a été générée mais aucun lien n'a été renvoyé par OpenAI.",
           });
         }
       } catch (err) {
@@ -214,7 +223,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         cleanup();
         return res.json({
           reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
-          error: err.message
+          error: err.message,
         });
       }
     }
@@ -228,13 +237,13 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
           content:
             "Tu es Lichen, artisan menuisier-agenceur à Rennes. " +
             "Conseille avec précision, bienveillance et pragmatisme. " +
-            "Pose des questions utiles et propose des pistes concrètes sur matériaux, budget et délais."
+            "Pose des questions utiles et propose des pistes concrètes sur matériaux, budget et délais.",
         },
         ...messages,
-        ...context
+        ...context,
       ],
       temperature: 0.7,
-      max_tokens: 700
+      max_tokens: 700,
     });
 
     const reply =
@@ -248,6 +257,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
   }
 });
 
+// ======== 🚀 Lancement ========
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`✅ Serveur Atelier Lichen actif sur le port ${PORT}`);
