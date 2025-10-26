@@ -18,18 +18,18 @@ dotenv.config();
 
 if (!process.env.OPENAI_API_KEY) {
   console.error("❌ ERREUR : clé OpenAI manquante. Ajoute-la dans ton .env");
-  console.error("OPENAI_API_KEY=sk-...");
   process.exit(1);
 }
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const app = express();
+
 app.use(
   cors({
     origin: [
       "https://menuiserie-lichen.fr",
       "https://www.menuiserie-lichen.fr",
-      "http://localhost:3000"
+      "http://localhost:3000",
     ],
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type"],
@@ -47,6 +47,8 @@ const upload = multer({
 app.get("/", (_req, res) => {
   res.send("🚀 Chatbot Atelier Lichen : prêt à répondre !");
 });
+
+// ======== 🧠 Analyse des fichiers joints ========
 
 async function summarizeFile(file) {
   try {
@@ -76,37 +78,29 @@ async function summarizeFile(file) {
 }
 
 function isImageRequest(text = "") {
-  const patterns = [
-    "image",
-    "rendu",
-    "visualise",
-    "illustration",
-    "photo",
-    "dessin",
-    "aperçu",
-  ];
+  const patterns = ["image", "rendu", "visualise", "illustration", "photo", "dessin", "aperçu"];
   return patterns.some((k) => text.toLowerCase().includes(k));
 }
 
+// ======== 🤖 Route principale du chatbot ========
+
 app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
-  const cleanup = () =>
-    req.files?.forEach((file) => fs.unlink(file.path, () => {}));
+  const cleanup = () => req.files?.forEach((file) => fs.unlink(file.path, () => {}));
 
   try {
     let messages = req.body.messages;
     if (typeof messages === "string") {
       try {
         messages = JSON.parse(messages);
-      } catch (err) {
-        console.error("⚠️ Impossible de parser les messages :", err.message);
+      } catch {
         messages = [];
       }
     }
 
     messages = Array.isArray(messages) ? messages : [];
     const userMessage = messages[messages.length - 1]?.content || "";
-    const fileSummaries = [];
 
+    const fileSummaries = [];
     for (const file of req.files || []) {
       fileSummaries.push(await summarizeFile(file));
     }
@@ -115,49 +109,47 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
     if (fileSummaries.length) {
       context.push({
         role: "user",
-        content:
-          "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
+        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
       });
     }
 
-if (isImageRequest(userMessage)) {
-  try {
-    const image = await client.images.generate({
-      model: "gpt-image-1",
-      prompt: userMessage,
-      size: "1024x1024",
-      response_format: "url" // 👈 force le retour d’un lien public
-    });
+    // ======== 🎨 Cas de génération d'image ========
+    if (isImageRequest(userMessage)) {
+      try {
+        const image = await client.images.generate({
+          model: "gpt-image-1",
+          prompt: userMessage,
+          size: "1024x1024",
+          response_format: "b64_json", // ✅ compatible avec les clés projet
+        });
 
-    const imageUrl = image.data?.[0]?.url || null;
+        const base64 = image.data?.[0]?.b64_json || null;
+        cleanup();
 
-    cleanup();
-
-    if (imageUrl) {
-      return res.json({
-        reply: `🖼️ Voici une image générée selon ta demande :`,
-        imageUrl
-      });
-    } else {
-      console.error("⚠️ OpenAI n'a renvoyé aucune URL :", image);
-      return res.json({
-        reply: "⚠️ L'image a été générée mais OpenAI n'a pas renvoyé d'URL."
-      });
+        if (base64) {
+          const imageUrl = `data:image/png;base64,${base64}`;
+          return res.json({
+            reply: "🖼️ Voici une image générée selon ta demande :",
+            imageUrl,
+          });
+        } else {
+          return res.json({
+            reply: "⚠️ L'image a été générée mais aucun contenu n'a été renvoyé.",
+          });
+        }
+      } catch (err) {
+        console.error("⚠️ Erreur génération image :", err.message);
+        cleanup();
+        return res.json({
+          reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
+          error: err.message,
+        });
+      }
     }
 
-  } catch (err) {
-    console.error("⚠️ Erreur génération image :", err.message);
-    cleanup();
-    return res.json({
-      reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
-      error: err.message
-    });
-  }
-}
-
-
+    // ======== 💬 Réponse textuelle GPT ========
     const completion = await client.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -173,8 +165,7 @@ if (isImageRequest(userMessage)) {
       max_tokens: 700,
     });
 
-    const reply =
-      completion.choices?.[0]?.message?.content || "(Pas de réponse)";
+    const reply = completion.choices?.[0]?.message?.content || "(Pas de réponse)";
     res.json({ reply });
     cleanup();
   } catch (err) {
