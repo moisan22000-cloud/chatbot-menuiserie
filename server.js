@@ -129,7 +129,7 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
     }
 
     const completion = await client.chat.completions.create({
-      model: "gpt-5-turbo",
+      model: "gpt-4o",
       messages: [
         {
           role: "system",
