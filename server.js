@@ -1,15 +1,17 @@
 // ==========================
-// 🤖 Chatbot Atelier Lichen (version stable Render)
+// 🤖 Chatbot Atelier Lichen
 // ==========================
 
 import express from "express";
 import multer from "multer";
-import pdfParse from "pdf-parse";
 import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import OpenAI from "openai";
-import { fileURLToPath } from "url";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse"); // ✅ compatible ESM + CommonJS
 
 dotenv.config();
 
@@ -21,15 +23,13 @@ if (!process.env.OPENAI_API_KEY) {
 
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const app = express();
+
 app.use(express.json({ limit: "25mb" }));
 app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const upload = multer({
   dest: path.join(process.cwd(), "tmp"),
-  limits: { fileSize: 25 * 1024 * 1024 }
+  limits: { fileSize: 25 * 1024 * 1024 },
 });
 
 app.get("/", (_req, res) => {
@@ -39,23 +39,23 @@ app.get("/", (_req, res) => {
 async function summarizeFile(file) {
   try {
     const filePath = file.path;
-
     if (file.mimetype.startsWith("text/")) {
       const content = fs.readFileSync(filePath, "utf8");
       return `📄 Fichier texte "${file.originalname}" : ${content.slice(0, 300)}...`;
     }
-
     if (file.mimetype === "application/pdf") {
       const dataBuffer = fs.readFileSync(filePath);
       const data = await pdfParse(dataBuffer);
-      return `📘 PDF "${file.originalname}" : ${data.text.slice(0, 300).replace(/\s+/g, " " )}...`;
+      return `📘 PDF "${file.originalname}" : ${data.text
+        .slice(0, 300)
+        .replace(/\s+/g, " ")}...`;
     }
-
     if (file.mimetype.startsWith("image/")) {
       const stats = fs.statSync(filePath);
-      return `🖼️ Image "${file.originalname}" (${Math.round(stats.size / 1024)} Ko, ${file.mimetype}) jointe.`;
+      return `🖼️ Image "${file.originalname}" (${Math.round(
+        stats.size / 1024
+      )} Ko, ${file.mimetype}) jointe.`;
     }
-
     return `📎 Fichier "${file.originalname}" (${file.mimetype}) joint.`;
   } catch (err) {
     console.error("⚠️ Impossible de lire le fichier", file.originalname, err.message);
@@ -64,12 +64,21 @@ async function summarizeFile(file) {
 }
 
 function isImageRequest(text = "") {
-  const patterns = ["image", "rendu", "visualise", "illustration", "photo", "dessin", "aperçu"];
+  const patterns = [
+    "image",
+    "rendu",
+    "visualise",
+    "illustration",
+    "photo",
+    "dessin",
+    "aperçu",
+  ];
   return patterns.some((k) => text.toLowerCase().includes(k));
 }
 
 app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
-  const cleanup = () => req.files?.forEach((file) => fs.unlink(file.path, () => {}));
+  const cleanup = () =>
+    req.files?.forEach((file) => fs.unlink(file.path, () => {}));
 
   try {
     let messages = req.body.messages;
@@ -81,8 +90,8 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
         messages = [];
       }
     }
-    messages = Array.isArray(messages) ? messages : [];
 
+    messages = Array.isArray(messages) ? messages : [];
     const userMessage = messages[messages.length - 1]?.content || "";
     const fileSummaries = [];
 
@@ -94,14 +103,16 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
     if (fileSummaries.length) {
       context.push({
         role: "user",
-        content: "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
+        content:
+          "Résumé des pièces jointes :\n" + fileSummaries.join("\n\n"),
       });
     }
 
     if (isImageRequest(userMessage)) {
       cleanup();
       return res.json({
-        reply: "🛠️ Génération d'image non disponible sur ce point de terminaison.",
+        reply:
+          "🛠️ Génération d'image non disponible sur ce point de terminaison.",
       });
     }
 
@@ -122,7 +133,8 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
       max_tokens: 700,
     });
 
-    const reply = completion.choices?.[0]?.message?.content || "(Pas de réponse)";
+    const reply =
+      completion.choices?.[0]?.message?.content || "(Pas de réponse)";
     res.json({ reply });
     cleanup();
   } catch (err) {
