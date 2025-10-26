@@ -120,38 +120,41 @@ app.post("/api/chat", upload.array("files[]", 5), async (req, res) => {
       });
     }
 
-    if (isImageRequest(userMessage)) {
-      try {
-        const image = await client.images.generate({
-          model: "gpt-image-1",
-          prompt: userMessage,
-          size: "1024x1024"
-        });
+if (isImageRequest(userMessage)) {
+  try {
+    const image = await client.images.generate({
+      model: "gpt-image-1",
+      prompt: userMessage,
+      size: "1024x1024",
+      response_format: "url" // 👈 force le retour d’un lien public
+    });
 
-        const imageUrl = image.data?.[0]?.url || null;
+    const imageUrl = image.data?.[0]?.url || null;
 
-        cleanup();
+    cleanup();
 
-        if (imageUrl) {
-          return res.json({
-            reply: `🖼️ Voici une image générée selon ta demande :`,
-            imageUrl
-          });
-        } else {
-          return res.json({
-            reply: "⚠️ L'image a été générée mais aucune URL n'a été renvoyée par OpenAI."
-          });
-        }
-
-      } catch (err) {
-        console.error("⚠️ Erreur génération image :", err.message);
-        cleanup();
-        return res.json({
-          reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
-          error: err.message
-        });
-      }
+    if (imageUrl) {
+      return res.json({
+        reply: `🖼️ Voici une image générée selon ta demande :`,
+        imageUrl
+      });
+    } else {
+      console.error("⚠️ OpenAI n'a renvoyé aucune URL :", image);
+      return res.json({
+        reply: "⚠️ L'image a été générée mais OpenAI n'a pas renvoyé d'URL."
+      });
     }
+
+  } catch (err) {
+    console.error("⚠️ Erreur génération image :", err.message);
+    cleanup();
+    return res.json({
+      reply: "⚠️ Erreur pendant la génération d'image. Réessaie plus tard.",
+      error: err.message
+    });
+  }
+}
+
 
     const completion = await client.chat.completions.create({
       model: "gpt-4o",
